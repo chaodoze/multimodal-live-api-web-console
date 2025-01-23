@@ -7,6 +7,14 @@ interface PDFUploadProps {
   onError?: (error: { message: string }) => void;
 }
 
+interface FileUploadResponse {
+  file: {
+    name: string;
+    uri: string;
+    mimeType: string;
+  };
+}
+
 export default function PDFUpload({ onUploadComplete, onError }: PDFUploadProps) {
   const { client } = useLiveAPIContext();
 
@@ -19,31 +27,56 @@ export default function PDFUpload({ onUploadComplete, onError }: PDFUploadProps)
       if (!client) {
         throw new Error("Client not available");
       }
-      // Get API key from client URL
-      const apiKey = client.url.split('?key=')[1];
+      // Get API key from environment
+      const apiKey = process.env.REACT_APP_GEMINI_API_KEY;
       if (!apiKey) {
-        throw new Error("API key not available");
+        throw new Error("API key not available - please set REACT_APP_GEMINI_API_KEY in .env");
       }
 
-      // Read file as text instead of base64
-      const textReader = new FileReader();
-      const textPromise = new Promise<string>((resolve) => {
-        textReader.onload = () => {
-          resolve(textReader.result as string);
+      // Convert File to base64
+      const reader = new FileReader();
+      const base64Promise = new Promise<string>((resolve) => {
+        reader.onload = () => {
+          const base64 = (reader.result as string).split(',')[1];
+          resolve(base64);
         };
       });
-      textReader.readAsText(file);
+      reader.readAsDataURL(file);
       
-      const textContent = await textPromise;
+      const base64Data = await base64Promise;
       
-      // Send the PDF content as text in the conversation
+      // Upload file using Files API
+      const uploadResponse = await fetch(
+        'https://generativelanguage.googleapis.com/upload/v1beta/files',
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'x-goog-api-key': apiKey,
+          },
+          body: JSON.stringify({
+            data: base64Data,
+            mimeType: "application/pdf",
+            name: file.name
+          }),
+        }
+      );
+
+      if (!uploadResponse.ok) {
+        throw new Error(`Upload failed: ${uploadResponse.statusText}`);
+      }
+
+      const responseData: FileUploadResponse = await uploadResponse.json();
+      
+      // Send the file reference in the conversation
       client.send([{
-        text: `PDF Content from ${file.name}:\n\n${textContent}`
+        inlineData: {
+          mimeType: "application/pdf",
+          data: responseData.file.uri
+        }
       }]);
       
-      // Generate a temporary URI for reference
-      const tempUri = `pdf-${Date.now()}-${file.name}`;
-      onUploadComplete?.(tempUri);
+      onUploadComplete?.(responseData.file.uri);
     } catch (error) {
       console.error("PDF upload failed:", error);
       onError?.(error as Error);
