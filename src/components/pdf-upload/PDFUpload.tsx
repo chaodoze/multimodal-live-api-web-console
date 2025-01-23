@@ -68,13 +68,14 @@ export default function PDFUpload({ onUploadComplete, onError }: PDFUploadProps)
 
       const responseData: FileUploadResponse = await uploadResponse.json();
       
-      // Send the file reference in the conversation
-      client.send([{
-        inlineData: {
-          mimeType: "application/pdf",
-          data: responseData.file.uri
-        }
-      }]);
+      // Send the file reference in the conversation with context
+      client.send([
+        { text: "Here's my PDF file" },
+        { inlineData: { 
+          mimeType: "application/pdf", 
+          data: responseData.file.uri 
+        }}
+      ]);
       
       onUploadComplete?.(responseData.file.uri);
     } catch (error) {
