@@ -43,7 +43,21 @@ export default function SidePanel() {
     label: string;
   } | null>(null);
   const [pdfUri, setPdfUri] = useState<string | null>(null);
+  const [uploadStatus, setUploadStatus] = useState<{
+    type: 'success' | 'error' | null;
+    message: string | null;
+  }>({ type: null, message: null });
   const inputRef = useRef<HTMLTextAreaElement>(null);
+  
+  // Clear upload status after 5 seconds
+  useEffect(() => {
+    if (uploadStatus.type) {
+      const timer = setTimeout(() => {
+        setUploadStatus({ type: null, message: null });
+      }, 5000);
+      return () => clearTimeout(timer);
+    }
+  }, [uploadStatus]);
 
   //scroll the log to the bottom when new logs come in
   useEffect(() => {
@@ -126,15 +140,35 @@ export default function SidePanel() {
         <Logger
           filter={(selectedOption?.value as LoggerFilterType) || "none"}
         />
-        <PDFUpload
-          onUploadComplete={(uri) => {
-            setPdfUri(uri);
-            client.log("client.upload", `PDF uploaded successfully: ${uri}`);
-          }}
-          onError={(error) => {
-            client.log("client.error", `PDF upload failed: ${error.message}`);
-          }}
-        />
+        <div className="pdf-upload-section">
+          {uploadStatus.type && (
+            <div className={`upload-status ${uploadStatus.type}`}>
+              {uploadStatus.message}
+            </div>
+          )}
+          <PDFUpload
+            onUploadComplete={(uri) => {
+              setPdfUri(uri);
+              setUploadStatus({
+                type: 'success',
+                message: 'PDF uploaded successfully! You can now reference it in your conversation.'
+              });
+              client.log("client.upload", `PDF uploaded successfully: ${uri}`);
+              
+              // Send a message to inform about PDF reference capability
+              client.send([{
+                text: "Note: You can now reference the uploaded PDF in our conversation."
+              }]);
+            }}
+            onError={(error) => {
+              setUploadStatus({
+                type: 'error',
+                message: `Upload failed: ${error.message}`
+              });
+              client.log("client.error", `PDF upload failed: ${error.message}`);
+            }}
+          />
+        </div>
       </div>
       <div className={cn("input-container", { disabled: !connected })}>
         <div className="input-content">

@@ -19,6 +19,7 @@ import { EventEmitter } from "eventemitter3";
 import { difference } from "lodash";
 import {
   ClientContentMessage,
+  FileReference,
   isInterrupted,
   isModelTurn,
   isServerContentMessage,
@@ -286,13 +287,44 @@ export class MultimodalLiveClient extends EventEmitter<MultimodalLiveClientEvent
   }
 
   /**
-   * send normal content parts such as { text }
+   * send normal content parts such as { text } or file references
    */
-  send(parts: Part | Part[], turnComplete: boolean = true) {
-    parts = Array.isArray(parts) ? parts : [parts];
+  /**
+   * Type guard for FileReference wrapper
+   */
+  private isFileReference(parts: any): parts is { fileData: FileReference } {
+    return (
+      typeof parts === 'object' &&
+      'fileData' in parts &&
+      typeof parts.fileData === 'object' &&
+      'fileUri' in parts.fileData &&
+      'mimeType' in parts.fileData
+    );
+  }
+
+  /**
+   * send normal content parts such as { text } or file references
+   */
+  send(parts: Part | Part[] | { fileData: FileReference }, turnComplete: boolean = true) {
+    let normalizedParts: Part[];
+    
+    if (Array.isArray(parts)) {
+      normalizedParts = parts;
+    } else if (this.isFileReference(parts)) {
+      // Handle file reference according to API specification
+      normalizedParts = [{
+        inlineData: {
+          mimeType: parts.fileData.mimeType,
+          data: parts.fileData.fileUri
+        }
+      }];
+    } else {
+      normalizedParts = [parts];
+    }
+
     const content: Content = {
       role: "user",
-      parts,
+      parts: normalizedParts,
     };
 
     const clientContentRequest: ClientContentMessage = {

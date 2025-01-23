@@ -41,6 +41,11 @@ export type LiveConfig = {
   tools?: Array<Tool | { googleSearch: {} } | { codeExecution: {} }>;
 };
 
+export type FileReference = {
+  fileUri: string;
+  mimeType: string;
+};
+
 export type LiveGenerationConfig = GenerationConfig & {
   responseModalities: "text" | "audio" | "image";
   speechConfig?: {
