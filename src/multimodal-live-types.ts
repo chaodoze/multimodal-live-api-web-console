@@ -34,11 +34,40 @@ import type {
 /**
  * the config to initiate the session
  */
+export enum SchemaType {
+  STRING = "string",
+  OBJECT = "object"
+}
+
+export type FunctionDeclaration = {
+  name: string;
+  description: string;
+  parameters: {
+    type: SchemaType;
+    properties: {
+      [key: string]: { type: SchemaType; description: string };
+    };
+    required: string[];
+  };
+};
+
+export const pdfLookupDeclaration: FunctionDeclaration = {
+  name: "pdf_lookup",
+  description: "Retrieve the text of an uploaded PDF file by URI",
+  parameters: {
+    type: SchemaType.OBJECT,
+    properties: {
+      pdfUri: { type: SchemaType.STRING, description: "The URI of the PDF file" }
+    },
+    required: ["pdfUri"]
+  }
+};
+
 export type LiveConfig = {
   model: string;
   systemInstruction?: { parts: Part[] };
   generationConfig?: Partial<LiveGenerationConfig>;
-  tools?: Array<Tool | { googleSearch: {} } | { codeExecution: {} }>;
+  tools?: Array<Tool | { googleSearch: {} } | { codeExecution: {} } | { function_declarations: FunctionDeclaration[] }>;
 };
 
 export type LiveGenerationConfig = GenerationConfig & {

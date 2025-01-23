@@ -166,12 +166,70 @@ export class MultimodalLiveClient extends EventEmitter<MultimodalLiveClientEvent
     return false;
   }
 
+  protected async fetchPdfText(pdfUri: string): Promise<string> {
+    try {
+      const apiKey = this.url.split('?key=')[1];
+      const response = await fetch(
+        `https://generativelanguage.googleapis.com/v1beta/files/${pdfUri}/content`,
+        {
+          headers: {
+            'x-goog-api-key': apiKey
+          }
+        }
+      );
+      
+      if (!response.ok) {
+        throw new Error(`Failed to fetch PDF content: ${response.statusText}`);
+      }
+      
+      const data = await response.json();
+      return data.text || '';
+    } catch (error) {
+      console.error('Error fetching PDF text:', error);
+      throw error;
+    }
+  }
+
   protected async receive(blob: Blob) {
     const response: LiveIncomingMessage = (await blobToJSON(
       blob,
     )) as LiveIncomingMessage;
     if (isToolCallMessage(response)) {
       this.log("server.toolCall", response);
+      
+      // Handle PDF lookup function calls
+      const pdfLookupCalls = response.toolCall.functionCalls.filter(fc => fc.name === "pdf_lookup");
+      if (pdfLookupCalls.length > 0) {
+        try {
+          const functionResponses = await Promise.all(
+            pdfLookupCalls.map(async (fc) => {
+              const args = fc.args as { pdfUri: string };
+              if (!args.pdfUri) {
+                throw new Error('Missing required parameter: pdfUri');
+              }
+              const fileText = await this.fetchPdfText(args.pdfUri);
+              return {
+                id: fc.id,
+                response: { text: fileText }
+              };
+            })
+          );
+          
+          this.sendToolResponse({
+            functionResponses
+          });
+        } catch (error) {
+          console.error('Error processing PDF lookup:', error);
+          // Send error response
+          this.sendToolResponse({
+            functionResponses: pdfLookupCalls.map(fc => ({
+              id: fc.id,
+              response: { error: 'Failed to fetch PDF content' }
+            }))
+          });
+        }
+      }
+      
       this.emit("toolcall", response.toolCall);
       return;
     }

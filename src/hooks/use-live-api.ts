@@ -19,7 +19,7 @@ import {
   MultimodalLiveAPIClientConnection,
   MultimodalLiveClient,
 } from "../lib/multimodal-live-client";
-import { LiveConfig } from "../multimodal-live-types";
+import { LiveConfig, pdfLookupDeclaration } from "../multimodal-live-types";
 import { AudioStreamer } from "../lib/audio-streamer";
 import { audioContext } from "../lib/utils";
 import VolMeterWorket from "../lib/worklets/vol-meter";
@@ -47,6 +47,24 @@ export function useLiveAPI({
   const [connected, setConnected] = useState(false);
   const [config, setConfig] = useState<LiveConfig>({
     model: "models/gemini-2.0-flash-exp",
+    systemInstruction: {
+      parts: [
+        {
+          text: "You are a helpful assistant with the ability to analyze PDF documents. When a PDF file is referenced in the conversation via its URI, access its content to help answer questions. Always acknowledge when you're using information from a PDF and cite relevant sections in your answers. The PDF content will be provided through the pdf_lookup function when needed."
+        }
+      ]
+    },
+    generationConfig: {
+      responseModalities: "text",
+      temperature: 0.7,
+      topK: 40,
+      topP: 0.95,
+      maxOutputTokens: 2048,
+    },
+    tools: [
+      { googleSearch: {} },
+      { function_declarations: [pdfLookupDeclaration] }
+    ]
   });
   const [volume, setVolume] = useState(0);
 
