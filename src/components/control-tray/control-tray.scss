@@ -36,6 +36,15 @@
     border: 1px solid var(--Neutral-20);
   }
 
+  &:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+    &:hover {
+      background: var(--Neutral-20);
+      border: 1px solid rgba(0, 0, 0, 0);
+    }
+  }
+
   &.connected {
     background: var(--Blue-800);
     color: var(--Blue-500);
