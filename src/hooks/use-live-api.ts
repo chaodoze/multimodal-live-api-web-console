@@ -47,6 +47,23 @@ export function useLiveAPI({
   const [connected, setConnected] = useState(false);
   const [config, setConfig] = useState<LiveConfig>({
     model: "models/gemini-2.0-flash-exp",
+    systemInstruction: {
+      parts: [
+        {
+          text: "You are a helpful assistant with the ability to analyze PDF documents. When a PDF file is referenced in the conversation, use its content to help answer questions. The PDF will be referenced by a URI in the conversation, and you should incorporate its content into your responses. Always acknowledge when you're using information from the PDF and cite relevant sections in your answers."
+        }
+      ]
+    },
+    generationConfig: {
+      responseModalities: "text",
+      temperature: 0.7,
+      topK: 40,
+      topP: 0.95,
+      maxOutputTokens: 2048,
+    },
+    tools: [
+      { googleSearch: {} }
+    ]
   });
   const [volume, setVolume] = useState(0);
 
