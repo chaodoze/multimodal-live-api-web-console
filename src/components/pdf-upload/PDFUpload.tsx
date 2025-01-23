@@ -27,10 +27,10 @@ export default function PDFUpload({ onUploadComplete, onError }: PDFUploadProps)
       if (!client) {
         throw new Error("Client not available");
       }
-      // Get API key from environment
-      const apiKey = process.env.REACT_APP_GEMINI_API_KEY;
+      // Use client's existing authentication
+      const apiKey = client.url.split('?key=')[1];
       if (!apiKey) {
-        throw new Error("API key not available - please set REACT_APP_GEMINI_API_KEY in .env");
+        throw new Error("Client not properly authenticated");
       }
 
       // Convert File to base64
@@ -68,12 +68,12 @@ export default function PDFUpload({ onUploadComplete, onError }: PDFUploadProps)
 
       const responseData: FileUploadResponse = await uploadResponse.json();
       
-      // Send the file reference in the conversation with context
+      // Send the file data directly in the conversation with context
       client.send([
         { text: "Here's my PDF file" },
         { inlineData: { 
           mimeType: "application/pdf", 
-          data: responseData.file.uri 
+          data: base64Data  // Send the base64 data directly instead of the URI
         }}
       ]);
       
