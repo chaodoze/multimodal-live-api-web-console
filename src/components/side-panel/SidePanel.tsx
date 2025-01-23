@@ -15,10 +15,11 @@
  */
 
 import cn from "classnames";
-import { useEffect, useRef, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { RiSidebarFoldLine, RiSidebarUnfoldLine } from "react-icons/ri";
 import Select from "react-select";
 import { useLiveAPIContext } from "../../contexts/LiveAPIContext";
+import PDFUpload from "../pdf-upload/PDFUpload";
 import { useLoggerStore } from "../../lib/store-logger";
 import Logger, { LoggerFilterType } from "../logger/Logger";
 import "./side-panel.scss";
@@ -41,6 +42,7 @@ export default function SidePanel() {
     value: string;
     label: string;
   } | null>(null);
+  const [pdfUri, setPdfUri] = useState<string | null>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
 
   //scroll the log to the bottom when new logs come in
@@ -123,6 +125,15 @@ export default function SidePanel() {
       <div className="side-panel-container" ref={loggerRef}>
         <Logger
           filter={(selectedOption?.value as LoggerFilterType) || "none"}
+        />
+        <PDFUpload
+          onUploadComplete={(uri) => {
+            setPdfUri(uri);
+            client.log("client.upload", `PDF uploaded successfully: ${uri}`);
+          }}
+          onError={(error) => {
+            client.log("client.error", `PDF upload failed: ${error.message}`);
+          }}
         />
       </div>
       <div className={cn("input-container", { disabled: !connected })}>
