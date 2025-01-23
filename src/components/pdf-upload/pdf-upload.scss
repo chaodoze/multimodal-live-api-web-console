@@ -1,0 +1,28 @@
+.pdf-upload-container {
+  display: flex;
+  align-items: center;
+  margin: 8px 0;
+  padding: 4px;
+  background: var(--Neutral-15);
+  border-radius: 4px;
+}
+
+.pdf-upload-input {
+  flex: 1;
+  color: var(--Neutral-90);
+  font-size: 14px;
+  
+  &::file-selector-button {
+    background: var(--Neutral-20);
+    border: none;
+    border-radius: 4px;
+    padding: 4px 8px;
+    margin-right: 8px;
+    color: var(--Neutral-90);
+    cursor: pointer;
+    
+    &:hover {
+      background: var(--Neutral-30);
+    }
+  }
+}

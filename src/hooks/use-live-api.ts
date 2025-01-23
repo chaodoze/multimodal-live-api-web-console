@@ -19,7 +19,7 @@ import {
   MultimodalLiveAPIClientConnection,
   MultimodalLiveClient,
 } from "../lib/multimodal-live-client";
-import { LiveConfig, pdfLookupDeclaration } from "../multimodal-live-types";
+import { LiveConfig, SchemaType } from "../multimodal-live-types";
 import { AudioStreamer } from "../lib/audio-streamer";
 import { audioContext } from "../lib/utils";
 import VolMeterWorket from "../lib/worklets/vol-meter";
@@ -34,7 +34,7 @@ export type UseLiveAPIResults = {
   volume: number;
 };
 
-export function useLiveAPI({
+function useLiveAPI({
   url,
   apiKey,
 }: MultimodalLiveAPIClientConnection): UseLiveAPIResults {
@@ -50,7 +50,40 @@ export function useLiveAPI({
     systemInstruction: {
       parts: [
         {
-          text: "You are a helpful assistant with the ability to analyze PDF documents. When a PDF file is referenced in the conversation via its URI, access its content to help answer questions. Always acknowledge when you're using information from a PDF and cite relevant sections in your answers. The PDF content will be provided through the pdf_lookup function when needed."
+          text: `CRITICAL INSTRUCTION - YOU ARE A PDF ANALYSIS ASSISTANT
+
+Your ONLY available tool is pdf_lookup. You MUST use it before answering ANY question.
+
+EXACT FORMAT REQUIRED (copy and paste this, just change the URI):
+{
+  "name": "pdf_lookup",
+  "args": {
+    "pdfUri": "uri_here"
+  }
+}
+
+❌ DO NOT USE:
+- render_altair or any other functions
+- Python code or programming syntax
+- Any other parameters or formats
+
+✅ CORRECT WORKFLOW:
+1. For EVERY question, first send the exact JSON above
+2. Wait for PDF content
+3. Then answer based on the content
+
+Example interaction:
+User: "What's in the PDF?"
+Assistant: Let me check the PDF content.
+{
+  "name": "pdf_lookup",
+  "args": {
+    "pdfUri": "actual_uri_here"
+  }
+}
+[Wait for content, then respond with analysis]
+
+Remember: You can ONLY access PDF content through this exact JSON format.`
         }
       ]
     },
@@ -59,21 +92,34 @@ export function useLiveAPI({
       temperature: 0.7,
       topK: 40,
       topP: 0.95,
-      maxOutputTokens: 2048,
+      maxOutputTokens: 2048
     },
     tools: [
-      { googleSearch: {} },
-      { function_declarations: [pdfLookupDeclaration] }
+      {
+        function_declarations: [{
+          name: "pdf_lookup",
+          description: "Use this function to retrieve PDF content. CRITICAL: Call this function using ONLY this exact JSON format: { \"name\": \"pdf_lookup\", \"args\": { \"pdfUri\": \"uri_here\" } }",
+          parameters: {
+            type: SchemaType.OBJECT,
+            properties: {
+              pdfUri: { type: SchemaType.STRING, description: "The URI of the PDF file to retrieve content from" }
+            },
+            required: ["pdfUri"]
+          }
+        }]
+      }
     ]
   });
-  const [volume, setVolume] = useState(0);
+const [volume, setVolume] = useState(0);
 
   // register audio for streaming server -> speakers
   useEffect(() => {
     if (!audioStreamerRef.current) {
       audioContext({ id: "audio-out" }).then((audioCtx: AudioContext) => {
-        audioStreamerRef.current = new AudioStreamer(audioCtx);
-        audioStreamerRef.current
+        if (audioStreamerRef.current) return;
+        const streamer = new AudioStreamer(audioCtx);
+        audioStreamerRef.current = streamer;
+        streamer
           .addWorklet<any>("vumeter-out", VolMeterWorket, (ev: any) => {
             setVolume(ev.data.volume);
           })
@@ -82,7 +128,7 @@ export function useLiveAPI({
           });
       });
     }
-  }, [audioStreamerRef]);
+  }, []);
 
   useEffect(() => {
     const onClose = () => {
@@ -108,13 +154,59 @@ export function useLiveAPI({
   }, [client]);
 
   const connect = useCallback(async () => {
-    console.log(config);
+    console.log('Initializing connection...');
     if (!config) {
       throw new Error("config has not been set");
     }
+
+    // Validate tools configuration
+    if (!config.tools || !Array.isArray(config.tools)) {
+      console.error('Tools configuration is missing or invalid');
+      throw new Error('Tools configuration is required');
+    }
+
+    // Find pdf_lookup function declaration
+    const pdfLookupTool = config.tools.find(tool => 
+      'function_declarations' in tool && 
+      tool.function_declarations?.some(fd => fd.name === 'pdf_lookup')
+    );
+
+    if (!pdfLookupTool) {
+      console.error('PDF lookup tool not found in config');
+      throw new Error('PDF lookup tool not properly configured');
+    }
+
+    // Log configuration details
+    console.log('Configuration validated:');
+    console.log('- Model:', config.model);
+    console.log('- System instruction:', {
+      present: !!config.systemInstruction,
+      partsLength: config.systemInstruction?.parts?.length || 0,
+      textLength: config.systemInstruction?.parts?.[0]?.text?.length || 0
+    });
+    console.log('- Tools configuration:', {
+      totalTools: config.tools?.length || 0,
+      hasPdfLookup: !!pdfLookupTool,
+      pdfLookupConfig: pdfLookupTool
+    });
+
+    // Validate required configurations
+    if (!config.systemInstruction?.parts?.[0]?.text) {
+      console.error('System instruction is missing or invalid');
+      throw new Error('System instruction must be configured');
+    }
+
+    // Ensure clean connection
     client.disconnect();
-    await client.connect(config);
-    setConnected(true);
+    
+    try {
+      await client.connect(config);
+      console.log('Successfully connected with tools configured');
+      setConnected(true);
+    } catch (error) {
+      console.error('Connection failed:', error);
+      throw error;
+    }
   }, [client, setConnected, config]);
 
   const disconnect = useCallback(async () => {
@@ -132,3 +224,5 @@ export function useLiveAPI({
     volume,
   };
 }
+
+export { useLiveAPI };

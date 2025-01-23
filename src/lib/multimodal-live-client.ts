@@ -195,10 +195,136 @@ export class MultimodalLiveClient extends EventEmitter<MultimodalLiveClientEvent
       blob,
     )) as LiveIncomingMessage;
     if (isToolCallMessage(response)) {
-      this.log("server.toolCall", response);
+      this.log("server.toolCall", "Received tool call message");
+      this.log("server.debug", `Full response: ${JSON.stringify(response, null, 2)}`);
+      
+      // Immediately reject any response containing code-like syntax
+      const responseStr = JSON.stringify(response);
+      if (responseStr.includes('executableCode') || responseStr.includes('print(') || 
+          responseStr.includes('PYTHON') || responseStr.includes('code>')) {
+        this.sendToolResponse({
+          functionResponses: [{
+            id: response.toolCall.functionCalls[0]?.id || 'error',
+            response: {
+              error: 'CODE SYNTAX DETECTED: Must use pure JSON format',
+              example: { name: "pdf_lookup", args: { pdfUri: "uri_here" } }
+            }
+          }]
+        });
+        return;
+      }
       
       // Handle PDF lookup function calls
-      const pdfLookupCalls = response.toolCall.functionCalls.filter(fc => fc.name === "pdf_lookup");
+      const pdfLookupCalls = response.toolCall.functionCalls.filter(fc => {
+        this.log("server.debug", `Processing function call: ${JSON.stringify(fc, null, 2)}`);
+        
+        // Check if this is a PDF lookup call
+        if (fc.name !== "pdf_lookup") {
+          this.log("server.debug", `Skipping non-pdf_lookup function: ${fc.name}`);
+          return false;
+        }
+        
+        // Ensure args is a proper object with pdfUri
+        if (typeof fc.args !== 'object' || !fc.args || Array.isArray(fc.args)) {
+          this.log("server.error", "Invalid args format for pdf_lookup. Must be an object.");
+          return false;
+        }
+        
+        // Strict validation for correct JSON format
+        const argsStr = JSON.stringify(fc.args);
+        
+        // Check for any programming syntax or invalid patterns
+        const invalidPatterns = [
+          'print(',
+          'pdf_lookup(',
+          'default_api',
+          'queries=',
+          'question=',
+          'uri=',
+          'function(',
+          '.lookup(',
+          'executableCode',
+          'PYTHON',
+          'python',
+          'console.log',
+          'google_search',
+          'search(',
+          'code>',
+          'pre>',
+          'h5>',
+          'executableCode: PYTHON',
+          'code',
+          'pre'
+        ];
+        
+        // Add debug logging
+        this.log("server.debug", `Validating function call args: ${argsStr}`);
+        const hasInvalidPattern = invalidPatterns.some(pattern => argsStr.includes(pattern));
+        if (hasInvalidPattern) {
+          this.log("server.debug", `Invalid pattern detected in: ${argsStr}`);
+          
+          // Send error response immediately
+          this.sendToolResponse({
+            functionResponses: [{
+              id: fc.id,
+              response: {
+                error: 'INVALID FORMAT: Use only this JSON structure:',
+                example: {
+                  name: "pdf_lookup",
+                  args: { pdfUri: "your_uri_here" }
+                }
+              }
+            }]
+          });
+          
+          return false;
+        }
+        
+        if (invalidPatterns.some(pattern => argsStr.includes(pattern))) {
+          this.log("server.error", `Invalid function call format detected. Must use exact JSON format: { "name": "pdf_lookup", "args": { "pdfUri": "uri_here" } }`);
+          
+          // Send error response immediately
+          this.sendToolResponse({
+            functionResponses: [{
+              id: fc.id,
+              response: {
+                error: 'INVALID FORMAT: Use only this JSON structure:',
+                example: {
+                  name: "pdf_lookup",
+                  args: { pdfUri: "your_uri_here" }
+                }
+              }
+            }]
+          });
+          
+          return false;
+        }
+        
+        // Validate exact structure
+        const args = fc.args as { pdfUri?: string };
+        if (!args.pdfUri || Object.keys(fc.args).length !== 1) {
+          this.log("server.error", "Invalid args structure. Only 'pdfUri' parameter is allowed.");
+          
+          // Send error response for invalid structure
+          this.sendToolResponse({
+            functionResponses: [{
+              id: fc.id,
+              response: {
+                error: 'INVALID STRUCTURE: Only pdfUri parameter is allowed',
+                example: {
+                  name: "pdf_lookup",
+                  args: { pdfUri: "your_uri_here" }
+                }
+              }
+            }]
+          });
+          
+          return false;
+        }
+        
+        return true;
+      });
+      
       if (pdfLookupCalls.length > 0) {
         try {
           const functionResponses = await Promise.all(
@@ -220,11 +346,17 @@ export class MultimodalLiveClient extends EventEmitter<MultimodalLiveClientEvent
           });
         } catch (error) {
           console.error('Error processing PDF lookup:', error);
-          // Send error response
+          // Send error response with more detailed feedback
           this.sendToolResponse({
             functionResponses: pdfLookupCalls.map(fc => ({
               id: fc.id,
-              response: { error: 'Failed to fetch PDF content' }
+              response: { 
+                error: 'Failed to fetch PDF content. Remember to use JSON format: { "name": "pdf_lookup", "args": { "pdfUri": "uri_here" } }',
+                example: {
+                  name: "pdf_lookup",
+                  args: { pdfUri: "your_uri_here" }
+                }
+              }
             }))
           });
         }
@@ -262,6 +394,44 @@ export class MultimodalLiveClient extends EventEmitter<MultimodalLiveClientEvent
 
       if (isModelTurn(serverContent)) {
         let parts: Part[] = serverContent.modelTurn.parts;
+        
+        // Check for code syntax in model response
+        const responseStr = JSON.stringify(parts);
+        if (responseStr.includes('executableCode') || responseStr.includes('print(') || 
+            responseStr.includes('PYTHON') || responseStr.includes('code>')) {
+          // Send a message to guide the model to use correct JSON format
+          const errorMessage = {
+            text: `⚠️ ERROR: Invalid syntax detected. You must use this exact JSON format:
+{
+  "name": "pdf_lookup",
+  "args": {
+    "pdfUri": "${this.url.split('files/')[1]?.split('/')[0] || 'your_file_uri'}"
+  }
+}
+
+❌ DO NOT USE:
+- Python code (print, function calls)
+- Any programming syntax
+- Any other parameters
+
+✅ COPY AND PASTE the exact JSON format above, just change the pdfUri value.`
+          };
+          
+          // Log the error for debugging
+          this.log("server.error", "Invalid syntax detected in model response");
+          
+          // Send the error message
+          this.send([errorMessage]);
+          
+          // Also emit as content to ensure it's displayed
+          const errorContent: ModelTurn = {
+            modelTurn: {
+              parts: [errorMessage]
+            }
+          };
+          this.emit("content", errorContent);
+          return;
+        }
 
         // when its audio that is returned for modelTurn
         const audioParts = parts.filter(
@@ -271,7 +441,6 @@ export class MultimodalLiveClient extends EventEmitter<MultimodalLiveClientEvent
 
         // strip the audio parts out of the modelTurn
         const otherParts = difference(parts, audioParts);
-        // console.log("otherParts", otherParts);
 
         base64s.forEach((b64) => {
           if (b64) {

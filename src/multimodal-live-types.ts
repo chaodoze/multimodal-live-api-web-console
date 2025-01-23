@@ -53,11 +53,11 @@ export type FunctionDeclaration = {
 
 export const pdfLookupDeclaration: FunctionDeclaration = {
   name: "pdf_lookup",
-  description: "Retrieve the text of an uploaded PDF file by URI",
+  description: "IMPORTANT: This function must be called using a JSON object with 'name' and 'args'. DO NOT use Python-style function calls. Example: { name: 'pdf_lookup', args: { pdfUri: 'uri_here' } }",
   parameters: {
     type: SchemaType.OBJECT,
     properties: {
-      pdfUri: { type: SchemaType.STRING, description: "The URI of the PDF file" }
+      pdfUri: { type: SchemaType.STRING, description: "The URI of the PDF file. Must be provided as a string in the args object." }
     },
     required: ["pdfUri"]
   }

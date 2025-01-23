@@ -15,11 +15,12 @@
  */
 
 import cn from "classnames";
-import { useEffect, useRef, useState } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import { RiSidebarFoldLine, RiSidebarUnfoldLine } from "react-icons/ri";
 import Select from "react-select";
 import { useLiveAPIContext } from "../../contexts/LiveAPIContext";
 import { useLoggerStore } from "../../lib/store-logger";
+import PDFUpload from "../pdf-upload/PDFUpload";
 import Logger, { LoggerFilterType } from "../logger/Logger";
 import "./side-panel.scss";
 
@@ -29,7 +30,7 @@ const filterOptions = [
   { value: "none", label: "All" },
 ];
 
-export default function SidePanel() {
+const SidePanel: React.FC = () => {
   const { connected, client } = useLiveAPIContext();
   const [open, setOpen] = useState(true);
   const loggerRef = useRef<HTMLDivElement>(null);
@@ -41,6 +42,11 @@ export default function SidePanel() {
     value: string;
     label: string;
   } | null>(null);
+  const [pdfUri, setPdfUri] = useState<string | null>(null);
+  const [uploadStatus, setUploadStatus] = useState<{
+    type: 'success' | 'error' | null;
+    message: string | null;
+  }>({ type: null, message: null });
   const inputRef = useRef<HTMLTextAreaElement>(null);
 
   //scroll the log to the bottom when new logs come in
@@ -65,7 +71,6 @@ export default function SidePanel() {
 
   const handleSubmit = () => {
     client.send([{ text: textInput }]);
-
     setTextInput("");
     if (inputRef.current) {
       inputRef.current.innerText = "";
@@ -124,6 +129,44 @@ export default function SidePanel() {
         <Logger
           filter={(selectedOption?.value as LoggerFilterType) || "none"}
         />
+        <div className="pdf-upload-section">
+          {uploadStatus.type && (
+            <div className={`upload-status ${uploadStatus.type}`}>
+              {uploadStatus.message}
+            </div>
+          )}
+          <PDFUpload
+            onUploadComplete={(uri) => {
+              setPdfUri(uri);
+              setUploadStatus({
+                type: 'success',
+                message: 'PDF uploaded successfully! You can now ask questions about its content.'
+              });
+              client.send([{
+                text: `I've uploaded a PDF file that you can now analyze. To access its content, you must use this exact JSON format:
+{
+  "name": "pdf_lookup",
+  "args": {
+    "pdfUri": "${uri}"
+  }
+}
+
+Remember:
+1. Always use this exact format to access PDF content
+2. Call pdf_lookup before answering any questions
+3. Wait for the content before providing your analysis`
+              }]);
+              client.log("client.upload", `PDF uploaded successfully with URI: ${uri}`);
+            }}
+            onError={(error: { message: string }) => {
+              setUploadStatus({
+                type: 'error',
+                message: `Upload failed: ${error.message}`
+              });
+              client.log("client.error", `PDF upload failed: ${error.message}`);
+            }}
+          />
+        </div>
       </div>
       <div className={cn("input-container", { disabled: !connected })}>
         <div className="input-content">
@@ -147,7 +190,6 @@ export default function SidePanel() {
           >
             Type&nbsp;something...
           </span>
-
           <button
             className="send-button material-symbols-outlined filled"
             onClick={handleSubmit}
@@ -158,4 +200,6 @@ export default function SidePanel() {
       </div>
     </div>
   );
-}
+};
+
+export default SidePanel;
