@@ -68,16 +68,13 @@ export default function PDFUpload({ onUploadComplete, onError }: PDFUploadProps)
 
       const responseData: FileUploadResponse = await uploadResponse.json();
       
-      // Send the file data directly in the conversation with context
-      client.send([
-        { text: "Here's my PDF file" },
-        { inlineData: { 
-          mimeType: "application/pdf", 
-          data: base64Data  // Send the base64 data directly instead of the URI
-        }}
-      ]);
-      
+      // First notify about successful upload
       onUploadComplete?.(responseData.file.uri);
+      
+      // Then send a text message about the uploaded file
+      client.send([
+        { text: `I've uploaded a PDF file named "${file.name}". The file has been processed and is available at: ${responseData.file.uri}` }
+      ]);
     } catch (error) {
       console.error("PDF upload failed:", error);
       onError?.(error as Error);
