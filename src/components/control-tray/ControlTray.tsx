@@ -18,17 +18,17 @@ import cn from "classnames";
 
 import { memo, ReactNode, RefObject, useEffect, useRef, useState } from "react";
 import { useLiveAPIContext } from "../../contexts/LiveAPIContext";
+import { LiveConfig } from "../../multimodal-live-types";
 import { UseMediaStreamResult } from "../../hooks/use-media-stream-mux";
 import { useScreenCapture } from "../../hooks/use-screen-capture";
 import { useWebcam } from "../../hooks/use-webcam";
 import { AudioRecorder } from "../../lib/audio-recorder";
+import { PDF_CONFIG, getGenerationConfig } from "../../config/pdf-config";
+import { getEnvConfig } from "../../config/env-config";
 import AudioPulse from "../audio-pulse/AudioPulse";
 import "./control-tray.scss";
 
-type PDFUploadButtonProps = {
-  onPDFSelect: (file: File) => void;
-  disabled?: boolean;
-};
+// PDF upload button props defined below
 
 export type ControlTrayProps = {
   videoRef: RefObject<HTMLVideoElement>;
@@ -61,19 +61,91 @@ const MediaStreamButton = memo(
     ),
 );
 
+interface PDFUploadButtonProps {
+  onPDFSelect: (data: string) => void;
+  disabled?: boolean;
+}
+
 const PDFUploadButton = memo(({ onPDFSelect, disabled }: PDFUploadButtonProps) => {
   const inputRef = useRef<HTMLInputElement>(null);
+  const [isProcessingPDF, setIsProcessingPDF] = useState(false);
 
   const handleClick = () => {
     inputRef.current?.click();
   };
 
-  const handleChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+  const handleChange = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    console.log('🔍 File input change event triggered');
     const file = event.target.files?.[0];
-    if (file) {
-      onPDFSelect(file);
-      // Reset input so the same file can be selected again
-      event.target.value = '';
+    if (!file) {
+      console.warn('❌ No file selected');
+      return;
+    }
+    
+    console.log('📄 File selected:', {
+      name: file.name,
+      type: file.type,
+      size: `${(file.size / 1024).toFixed(2)}KB`
+    });
+    
+    // Reset input so the same file can be selected again
+    event.target.value = '';
+    
+    // Validate file size and type
+    const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10MB limit
+    if (file.size > MAX_FILE_SIZE) {
+      console.error('❌ File too large:', `${(file.size / (1024 * 1024)).toFixed(2)}MB`);
+      alert("File too large (max 10MB)");
+      return;
+    }
+    
+    if (file.type !== 'application/pdf') {
+      console.error('❌ Invalid file type:', file.type);
+      alert("Invalid file type. Please upload a PDF file.");
+      return;
+    }
+
+    console.log('🔄 Starting PDF processing...');
+    setIsProcessingPDF(true);
+    
+    try {
+      // Create a promise wrapper for FileReader
+      const readFileAsBase64 = () => new Promise<string>((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => {
+          try {
+            console.log('📖 FileReader onload triggered');
+            const base64data = reader.result?.toString().split(",")[1];
+            if (base64data) {
+              console.log('✅ Base64 data extracted successfully:', {
+                dataLength: base64data.length,
+                preview: base64data.substring(0, 50) + '...'
+              });
+              resolve(base64data);
+            } else {
+              reject(new Error('Failed to extract base64 data'));
+            }
+          } catch (error) {
+            reject(error);
+          }
+        };
+        reader.onerror = (error) => {
+          console.error('❌ FileReader error:', error);
+          reject(reader.error);
+        };
+        console.log('📚 Starting FileReader.readAsDataURL');
+        reader.readAsDataURL(file);
+      });
+
+      const base64data = await readFileAsBase64();
+      console.log('🎯 Calling onPDFSelect with base64 data');
+      onPDFSelect(base64data);
+      console.log('✨ PDF processing completed successfully');
+    } catch (error) {
+      console.error("❌ Error processing PDF:", error);
+      alert("Error processing PDF. Please try again.");
+    } finally {
+      setIsProcessingPDF(false);
     }
   };
 
@@ -84,12 +156,23 @@ const PDFUploadButton = memo(({ onPDFSelect, disabled }: PDFUploadButtonProps) =
         ref={inputRef}
         onChange={handleChange}
         accept="application/pdf"
-        style={{ display: 'none' }}
+        style={{ 
+          position: 'absolute',
+          left: '0',
+          top: '0',
+          opacity: 0.01,
+          cursor: 'pointer',
+          width: '100%',
+          height: '100%',
+          zIndex: 1
+        }}
+        data-testid="pdf-upload-input"
+        aria-label="Upload PDF"
       />
       <button 
         className="action-button" 
         onClick={handleClick}
-        disabled={disabled}
+        disabled={disabled || isProcessingPDF}
       >
         <span className="material-symbols-outlined">description</span>
       </button>
@@ -110,11 +193,11 @@ function ControlTray({
   const [inVolume, setInVolume] = useState(0);
   const [audioRecorder] = useState(() => new AudioRecorder());
   const [muted, setMuted] = useState(false);
-  const [isProcessingPDF, setIsProcessingPDF] = useState(false);
+  const [pdfData, setPdfData] = useState<string | null>(null);
   const renderCanvasRef = useRef<HTMLCanvasElement>(null);
   const connectButtonRef = useRef<HTMLButtonElement>(null);
 
-  const { client, connected, connect, disconnect, volume } =
+  const { client, connected, connect, disconnect, volume, setConfig } =
     useLiveAPIContext();
 
   useEffect(() => {
@@ -122,6 +205,42 @@ function ControlTray({
       connectButtonRef.current.focus();
     }
   }, [connected]);
+
+  // Configure session with PDF context when PDF is uploaded
+  useEffect(() => {
+    if (pdfData) {
+      console.log('Configuring session with PDF data...');
+      try {
+        const envConfig = getEnvConfig();
+        const generationConfig = getGenerationConfig();
+        
+        const pdfConfig: LiveConfig = {
+          model: envConfig.model,
+          systemInstruction: {
+            parts: [
+              {
+                text: "Analyze the provided PDF document and help answer questions about its content."
+              },
+              {
+                inlineData: {
+                  mimeType: PDF_CONFIG.ACCEPTED_MIME_TYPE,
+                  data: pdfData
+                }
+              }
+            ]
+          },
+          generationConfig
+        };
+        setConfig(pdfConfig);
+        console.log('PDF content added to system instruction');
+      } catch (error) {
+        console.error('Failed to configure PDF session:', error);
+        return;
+      }
+      setConfig(pdfConfig);
+      console.log('PDF content added to system instruction');
+    }
+  }, [pdfData, setConfig]);
   useEffect(() => {
     document.documentElement.style.setProperty(
       "--volume",
@@ -235,46 +354,12 @@ function ControlTray({
             />
           </>
         )}
-        <PDFUploadButton
-          onPDFSelect={(file) => {
-            if (!connected || isProcessingPDF) return;
-            
-            // Validate file size and type
-            const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10MB limit
-            if (file.size > MAX_FILE_SIZE) {
-              console.error("File too large (max 10MB)");
-              return;
-            }
-            
-            setIsProcessingPDF(true);
-            
-            const reader = new FileReader();
-            reader.onload = () => {
-              try {
-                const base64data = (reader.result as string).split(",")[1];
-                if (!base64data) {
-                  throw new Error("Invalid file data");
-                }
-                
-                client.sendRealtimeInput([
-                  {
-                    mimeType: "application/pdf",
-                    data: base64data,
-                  },
-                ]);
-              } catch (error) {
-                console.error("Error processing PDF:", error);
-              } finally {
-                setIsProcessingPDF(false);
-              }
-            };
-            reader.onerror = () => {
-              console.error("Error reading PDF file");
-              setIsProcessingPDF(false);
-            };
-            reader.readAsDataURL(file);
+        <PDFUploadButton 
+          onPDFSelect={(data) => {
+            setPdfData(data);
+            console.log('PDF uploaded successfully');
           }}
-          disabled={!connected || isProcessingPDF}
+          disabled={connected}
         />
         {children}
       </nav>
@@ -285,6 +370,7 @@ function ControlTray({
             ref={connectButtonRef}
             className={cn("action-button connect-toggle", { connected })}
             onClick={connected ? disconnect : connect}
+            disabled={!pdfData}
           >
             <span className="material-symbols-outlined filled">
               {connected ? "pause" : "play_arrow"}
