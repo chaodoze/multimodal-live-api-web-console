@@ -357,7 +357,7 @@ function ControlTray({
             setPdfData(data);
             console.log('PDF uploaded successfully');
           }}
-          disabled={connected}
+          disabled={connected} // Disable only after connection is established
         />
         {children}
       </nav>
