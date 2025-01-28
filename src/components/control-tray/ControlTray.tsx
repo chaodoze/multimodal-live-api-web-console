@@ -25,11 +25,6 @@ import { AudioRecorder } from "../../lib/audio-recorder";
 import AudioPulse from "../audio-pulse/AudioPulse";
 import "./control-tray.scss";
 
-type PDFUploadButtonProps = {
-  onPDFSelect: (file: File) => void;
-  disabled?: boolean;
-};
-
 export type ControlTrayProps = {
   videoRef: RefObject<HTMLVideoElement>;
   children?: ReactNode;
@@ -61,41 +56,7 @@ const MediaStreamButton = memo(
     ),
 );
 
-const PDFUploadButton = memo(({ onPDFSelect, disabled }: PDFUploadButtonProps) => {
-  const inputRef = useRef<HTMLInputElement>(null);
 
-  const handleClick = () => {
-    inputRef.current?.click();
-  };
-
-  const handleChange = (event: React.ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0];
-    if (file) {
-      onPDFSelect(file);
-      // Reset input so the same file can be selected again
-      event.target.value = '';
-    }
-  };
-
-  return (
-    <>
-      <input
-        type="file"
-        ref={inputRef}
-        onChange={handleChange}
-        accept="application/pdf"
-        style={{ display: 'none' }}
-      />
-      <button 
-        className="action-button" 
-        onClick={handleClick}
-        disabled={disabled}
-      >
-        <span className="material-symbols-outlined">description</span>
-      </button>
-    </>
-  );
-});
 
 function ControlTray({
   videoRef,
@@ -110,7 +71,6 @@ function ControlTray({
   const [inVolume, setInVolume] = useState(0);
   const [audioRecorder] = useState(() => new AudioRecorder());
   const [muted, setMuted] = useState(false);
-  const [isProcessingPDF, setIsProcessingPDF] = useState(false);
   const renderCanvasRef = useRef<HTMLCanvasElement>(null);
   const connectButtonRef = useRef<HTMLButtonElement>(null);
 
@@ -235,47 +195,7 @@ function ControlTray({
             />
           </>
         )}
-        <PDFUploadButton
-          onPDFSelect={(file) => {
-            if (!connected || isProcessingPDF) return;
-            
-            // Validate file size and type
-            const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10MB limit
-            if (file.size > MAX_FILE_SIZE) {
-              console.error("File too large (max 10MB)");
-              return;
-            }
-            
-            setIsProcessingPDF(true);
-            
-            const reader = new FileReader();
-            reader.onload = () => {
-              try {
-                const base64data = (reader.result as string).split(",")[1];
-                if (!base64data) {
-                  throw new Error("Invalid file data");
-                }
-                
-                client.sendRealtimeInput([
-                  {
-                    mimeType: "application/pdf",
-                    data: base64data,
-                  },
-                ]);
-              } catch (error) {
-                console.error("Error processing PDF:", error);
-              } finally {
-                setIsProcessingPDF(false);
-              }
-            };
-            reader.onerror = () => {
-              console.error("Error reading PDF file");
-              setIsProcessingPDF(false);
-            };
-            reader.readAsDataURL(file);
-          }}
-          disabled={!connected || isProcessingPDF}
-        />
+
         {children}
       </nav>
 
