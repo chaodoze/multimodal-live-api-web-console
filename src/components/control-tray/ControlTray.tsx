@@ -357,7 +357,7 @@ function ControlTray({
             setPdfData(data);
             console.log('PDF uploaded successfully');
           }}
-          disabled={connected} // Disable only after connection is established
+          disabled={false} // Allow PDF upload before session starts
         />
         {children}
       </nav>
