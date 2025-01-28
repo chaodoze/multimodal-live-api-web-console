@@ -18,17 +18,13 @@ import cn from "classnames";
 
 import { memo, ReactNode, RefObject, useEffect, useRef, useState } from "react";
 import { useLiveAPIContext } from "../../contexts/LiveAPIContext";
-import { LiveConfig } from "../../multimodal-live-types";
 import { UseMediaStreamResult } from "../../hooks/use-media-stream-mux";
 import { useScreenCapture } from "../../hooks/use-screen-capture";
 import { useWebcam } from "../../hooks/use-webcam";
 import { AudioRecorder } from "../../lib/audio-recorder";
-import { PDF_CONFIG, getGenerationConfig } from "../../config/pdf-config";
-import { getEnvConfig } from "../../config/env-config";
+
 import AudioPulse from "../audio-pulse/AudioPulse";
 import "./control-tray.scss";
-
-// PDF upload button props defined below
 
 export type ControlTrayProps = {
   videoRef: RefObject<HTMLVideoElement>;
@@ -89,39 +85,7 @@ function ControlTray({
     }
   }, [connected]);
 
-  // Configure session with PDF context when PDF is uploaded
-  useEffect(() => {
-    if (pdfData) {
-      console.log('Configuring session with PDF data...');
-      try {
-        const envConfig = getEnvConfig();
-        const generationConfig = getGenerationConfig();
-        
-        const pdfConfig: LiveConfig = {
-          model: envConfig.model,
-          systemInstruction: {
-            parts: [
-              {
-                text: "Analyze the provided PDF document and help answer questions about its content."
-              },
-              {
-                inlineData: {
-                  mimeType: PDF_CONFIG.ACCEPTED_MIME_TYPE,
-                  data: pdfData
-                }
-              }
-            ]
-          },
-          generationConfig
-        };
-        setConfig(pdfConfig);
-        console.log('PDF content added to system instruction');
-      } catch (error) {
-        console.error('Failed to configure PDF session:', error);
-        return;
-      }
-    }
-  }, [pdfData, setConfig]);
+
   useEffect(() => {
     document.documentElement.style.setProperty(
       "--volume",
