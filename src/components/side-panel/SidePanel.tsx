@@ -15,13 +15,132 @@
  */
 
 import cn from "classnames";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, memo } from "react";
 import { RiSidebarFoldLine, RiSidebarUnfoldLine } from "react-icons/ri";
 import Select from "react-select";
 import { useLiveAPIContext } from "../../contexts/LiveAPIContext";
 import { useLoggerStore } from "../../lib/store-logger";
 import Logger, { LoggerFilterType } from "../logger/Logger";
 import "./side-panel.scss";
+
+interface PDFUploadButtonProps {
+  onPDFSelect: (data: string) => void;
+  disabled?: boolean;
+}
+
+const PDFUploadButton = memo(({ onPDFSelect, disabled }: PDFUploadButtonProps) => {
+  const inputRef = useRef<HTMLInputElement>(null);
+  const [isProcessingPDF, setIsProcessingPDF] = useState(false);
+
+  const handleClick = () => {
+    inputRef.current?.click();
+  };
+
+  const handleChange = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    console.log('🔍 File input change event triggered');
+    const file = event.target.files?.[0];
+    if (!file) {
+      console.warn('❌ No file selected');
+      return;
+    }
+    
+    console.log('📄 File selected:', {
+      name: file.name,
+      type: file.type,
+      size: `${(file.size / 1024).toFixed(2)}KB`
+    });
+    
+    // Reset input so the same file can be selected again
+    event.target.value = '';
+    
+    // Validate file size and type
+    const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10MB limit
+    if (file.size > MAX_FILE_SIZE) {
+      console.error('❌ File too large:', `${(file.size / (1024 * 1024)).toFixed(2)}MB`);
+      alert("File too large (max 10MB)");
+      return;
+    }
+    
+    if (file.type !== 'application/pdf') {
+      console.error('❌ Invalid file type:', file.type);
+      alert("Invalid file type. Please upload a PDF file.");
+      return;
+    }
+
+    console.log('🔄 Starting PDF processing...');
+    setIsProcessingPDF(true);
+    
+    try {
+      // Create a promise wrapper for FileReader
+      const readFileAsBase64 = () => new Promise<string>((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => {
+          try {
+            console.log('📖 FileReader onload triggered');
+            const base64data = reader.result?.toString().split(",")[1];
+            if (base64data) {
+              console.log('✅ Base64 data extracted successfully:', {
+                dataLength: base64data.length,
+                preview: base64data.substring(0, 50) + '...'
+              });
+              resolve(base64data);
+            } else {
+              reject(new Error('Failed to extract base64 data'));
+            }
+          } catch (error) {
+            reject(error);
+          }
+        };
+        reader.onerror = (error) => {
+          console.error('❌ FileReader error:', error);
+          reject(reader.error);
+        };
+        console.log('📚 Starting FileReader.readAsDataURL');
+        reader.readAsDataURL(file);
+      });
+
+      const base64data = await readFileAsBase64();
+      console.log('🎯 Calling onPDFSelect with base64 data');
+      onPDFSelect(base64data);
+      console.log('✨ PDF processing completed successfully');
+    } catch (error) {
+      console.error("❌ Error processing PDF:", error);
+      alert("Error processing PDF. Please try again.");
+    } finally {
+      setIsProcessingPDF(false);
+    }
+  };
+
+  return (
+    <>
+      <input
+        type="file"
+        ref={inputRef}
+        onChange={handleChange}
+        accept="application/pdf"
+        style={{ 
+          position: 'absolute',
+          left: '0',
+          top: '0',
+          opacity: 0.01,
+          cursor: 'pointer',
+          width: '100%',
+          height: '100%',
+          zIndex: 1
+        }}
+        data-testid="pdf-upload-input"
+        aria-label="Upload PDF"
+      />
+      <button 
+        className="action-button" 
+        onClick={handleClick}
+        disabled={disabled || isProcessingPDF}
+      >
+        <span className="material-symbols-outlined">description</span>
+      </button>
+    </>
+  );
+});
 
 const filterOptions = [
   { value: "conversations", label: "Conversations" },
@@ -87,6 +206,18 @@ export default function SidePanel() {
         )}
       </header>
       <section className="indicators">
+        <PDFUploadButton
+          onPDFSelect={(data) => {
+            client.sendRealtimeInput([
+              {
+                mimeType: "application/pdf",
+                data,
+              },
+            ]);
+            console.log('PDF uploaded successfully');
+          }}
+          disabled={!connected}
+        />
         <Select
           className="react-select"
           classNamePrefix="react-select"
