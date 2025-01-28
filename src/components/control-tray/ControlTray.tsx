@@ -237,8 +237,6 @@ function ControlTray({
         console.error('Failed to configure PDF session:', error);
         return;
       }
-      setConfig(pdfConfig);
-      console.log('PDF content added to system instruction');
     }
   }, [pdfData, setConfig]);
   useEffect(() => {
