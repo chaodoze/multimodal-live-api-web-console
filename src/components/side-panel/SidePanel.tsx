@@ -15,13 +15,53 @@
  */
 
 import cn from "classnames";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, memo } from "react";
 import { RiSidebarFoldLine, RiSidebarUnfoldLine } from "react-icons/ri";
 import Select from "react-select";
 import { useLiveAPIContext } from "../../contexts/LiveAPIContext";
 import { useLoggerStore } from "../../lib/store-logger";
 import Logger, { LoggerFilterType } from "../logger/Logger";
 import "./side-panel.scss";
+
+type PDFUploadButtonProps = {
+  onPDFSelect: (file: File) => void;
+  disabled?: boolean;
+};
+
+const PDFUploadButton = memo(({ onPDFSelect, disabled }: PDFUploadButtonProps) => {
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  const handleClick = () => {
+    inputRef.current?.click();
+  };
+
+  const handleChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (file) {
+      onPDFSelect(file);
+      event.target.value = '';
+    }
+  };
+
+  return (
+    <>
+      <input
+        type="file"
+        ref={inputRef}
+        onChange={handleChange}
+        accept="application/pdf"
+        style={{ display: 'none' }}
+      />
+      <button 
+        className="action-button" 
+        onClick={handleClick}
+        disabled={disabled}
+      >
+        <span className="material-symbols-outlined">description</span>
+      </button>
+    </>
+  );
+});
 
 const filterOptions = [
   { value: "conversations", label: "Conversations" },
@@ -32,6 +72,7 @@ const filterOptions = [
 export default function SidePanel() {
   const { connected, client } = useLiveAPIContext();
   const [open, setOpen] = useState(true);
+  const [isProcessingPDF, setIsProcessingPDF] = useState(false);
   const loggerRef = useRef<HTMLDivElement>(null);
   const loggerLastHeightRef = useRef<number>(-1);
   const { log, logs } = useLoggerStore();
@@ -87,6 +128,46 @@ export default function SidePanel() {
         )}
       </header>
       <section className="indicators">
+        <PDFUploadButton
+          onPDFSelect={(file) => {
+            if (!connected || isProcessingPDF) return;
+            
+            const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10MB limit
+            if (file.size > MAX_FILE_SIZE) {
+              console.error("File too large (max 10MB)");
+              return;
+            }
+            
+            setIsProcessingPDF(true);
+            
+            const reader = new FileReader();
+            reader.onload = () => {
+              try {
+                const base64data = (reader.result as string).split(",")[1];
+                if (!base64data) {
+                  throw new Error("Invalid file data");
+                }
+                
+                client.sendRealtimeInput([
+                  {
+                    mimeType: "application/pdf",
+                    data: base64data,
+                  },
+                ]);
+              } catch (error) {
+                console.error("Error processing PDF:", error);
+              } finally {
+                setIsProcessingPDF(false);
+              }
+            };
+            reader.onerror = () => {
+              console.error("Error reading PDF file");
+              setIsProcessingPDF(false);
+            };
+            reader.readAsDataURL(file);
+          }}
+          disabled={!connected || isProcessingPDF}
+        />
         <Select
           className="react-select"
           classNamePrefix="react-select"
